@@ -1,15 +1,16 @@
 
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 
 export default function TelegramLink() {
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
+  const [location, setLocation] = useLocation();
+  const searchParams = new URLSearchParams(window.location.search);
   const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
   const [isLinking, setIsLinking] = useState(false);
@@ -18,129 +19,134 @@ export default function TelegramLink() {
   const [authCheckComplete, setAuthCheckComplete] = useState(false);
 
   useEffect(() => {
-    const linkAccount = async () => {
+    const autoVerify = async () => {
       const token = searchParams.get('token');
-      
+
       if (!token) {
         setLinkStatus('error');
         setErrorMessage('Invalid link. Please use /start in Telegram to get a new link.');
         return;
       }
 
-      // Wait a moment for auth state to settle
       if (!authCheckComplete) {
-        setTimeout(() => setAuthCheckComplete(true), 500);
+        setTimeout(() => setAuthCheckComplete(true), 300);
         return;
       }
 
-      if (!isAuthenticated) {
-        // Redirect to login with return URL
-        navigate(`/?telegram_token=${token}`);
-        return;
-      }
-
-      setIsLinking(true);
-
-      try {
-        const response = await apiRequest(`/api/telegram/verify-link?token=${token}`, {
-          method: 'GET',
-        });
-
-        if (response.success) {
-          setLinkStatus('success');
-          toast({
-            title: 'Account Linked!',
-            description: 'Your Telegram account has been successfully linked.',
-          });
-          
-          // Redirect to profile after 3 seconds
-          setTimeout(() => {
-            navigate('/profile');
-          }, 3000);
-        } else {
-          setLinkStatus('error');
-          setErrorMessage(response.message || 'Failed to link account');
-          toast({
-            title: 'Link Failed',
-            description: response.message,
-            variant: 'destructive',
-          });
-        }
-      } catch (error) {
-        setLinkStatus('error');
-        setErrorMessage('An error occurred. Please try again.');
-        toast({
-          title: 'Error',
-          description: 'Failed to link Telegram account',
-          variant: 'destructive',
-        });
-      } finally {
-        setIsLinking(false);
+      if (isAuthenticated) {
+        await handleVerify(token);
       }
     };
 
-    linkAccount();
-  }, [user, searchParams, isAuthenticated, authCheckComplete, navigate, toast]);
+    autoVerify();
+  }, [user, isAuthenticated, authCheckComplete, toast]);
+
+  const handleVerify = async (token?: string | null) => {
+    const t = token ?? searchParams.get('token');
+    if (!t) {
+      setLinkStatus('error');
+      setErrorMessage('Invalid link token');
+      return;
+    }
+
+    setIsLinking(true);
+    try {
+      const response = await apiRequest(`/api/telegram/verify-link?token=${t}`, { method: 'GET' });
+
+      if (response.success) {
+        setLinkStatus('success');
+        toast({ title: 'Account Linked!', description: 'Your Telegram account has been successfully linked.' });
+        setTimeout(() => setLocation('/profile'), 2000);
+      } else {
+        setLinkStatus('error');
+        setErrorMessage(response.message || 'Failed to link account');
+        toast({ title: 'Link Failed', description: response.message, variant: 'destructive' });
+      }
+    } catch (err) {
+      setLinkStatus('error');
+      setErrorMessage('An error occurred. Please try again.');
+      toast({ title: 'Error', description: 'Failed to link Telegram account', variant: 'destructive' });
+    } finally {
+      setIsLinking(false);
+    }
+  };
+
+  const botUsername = (import.meta as any).env?.VITE_TELEGRAM_BOT_USERNAME || '';
+  const telegramWebUrl = botUsername ? `https://t.me/${botUsername}` : 'https://t.me/';
+  const telegramDeepLink = botUsername ? `tg://resolve?domain=${botUsername}` : telegramWebUrl;
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-4">
-      <Card className="max-w-md w-full">
-        <CardHeader>
-          <CardTitle className="text-center">
-            {linkStatus === 'pending' && '🔗 Linking Telegram Account...'}
-            {linkStatus === 'success' && '✅ Account Linked!'}
-            {linkStatus === 'error' && '❌ Link Failed'}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-center">
-          {isLinking && (
-            <div className="space-y-4">
-              <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto"></div>
-              <p className="text-slate-600 dark:text-slate-400">
-                Linking your Telegram account...
-              </p>
-            </div>
-          )}
+    <Dialog open onOpenChange={() => setLocation('/') }>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="text-center">Link your Telegram account</DialogTitle>
+          <DialogDescription className="text-center">Use this dialog to connect your Telegram account to Bantah. Follow the instructions below.</DialogDescription>
+        </DialogHeader>
 
-          {linkStatus === 'success' && (
-            <div className="space-y-4">
-              <div className="text-6xl">🎉</div>
-              <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                Success!
-              </p>
-              <p className="text-slate-600 dark:text-slate-400">
-                Your Telegram account is now linked to Bantah.
-              </p>
-              <p className="text-sm text-slate-500">
-                Redirecting to your profile...
-              </p>
-            </div>
-          )}
+        <div className="mt-4">
+          <Card className="w-full">
+            <CardHeader>
+              <CardTitle className="text-center">
+                {linkStatus === 'pending' && '🔗 Linking Telegram Account...'}
+                {linkStatus === 'success' && '✅ Account Linked!'}
+                {linkStatus === 'error' && '❌ Link Failed'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-center">
+              {isLinking && (
+                <div className="space-y-4">
+                  <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto"></div>
+                  <p className="text-slate-600 dark:text-slate-400">Linking your Telegram account...</p>
+                </div>
+              )}
 
-          {linkStatus === 'error' && (
-            <div className="space-y-4">
-              <div className="text-6xl">⚠️</div>
-              <p className="text-lg font-semibold text-red-600 dark:text-red-400">
-                Link Failed
-              </p>
-              <p className="text-slate-600 dark:text-slate-400">
-                {errorMessage}
-              </p>
-              <div className="space-y-2">
-                <Button 
-                  onClick={() => navigate('/profile')}
-                  className="w-full"
-                >
-                  Go to Profile
-                </Button>
-                <p className="text-xs text-slate-500">
-                  Open Telegram and use /start to get a new link
-                </p>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+              {linkStatus === 'success' && (
+                <div className="space-y-4">
+                  <div className="text-6xl">🎉</div>
+                  <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">Success!</p>
+                  <p className="text-slate-600 dark:text-slate-400">Your Telegram account is now linked to Bantah.</p>
+                  <p className="text-sm text-slate-500">Redirecting to your profile...</p>
+                  <div className="mt-2">
+                    <a href={telegramWebUrl} target="_blank" rel="noreferrer">
+                      <Button className="w-full">Open Telegram</Button>
+                    </a>
+                    <p className="text-xs text-slate-500 mt-2">Or open the Telegram app to continue using the bot.</p>
+                  </div>
+                </div>
+              )}
+
+              {linkStatus === 'error' && (
+                <div className="space-y-4">
+                  <div className="text-6xl">⚠️</div>
+                  <p className="text-lg font-semibold text-red-600 dark:text-red-400">Link Failed</p>
+                  <p className="text-slate-600 dark:text-slate-400">{errorMessage}</p>
+                  <div className="space-y-2">
+                    <Button onClick={() => setLocation('/profile')} className="w-full">Go to Profile</Button>
+                    <p className="text-xs text-slate-500">Open Telegram and use /start to get a new link</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Action area for logged-in vs logged-out */}
+              {!isLinking && linkStatus === 'pending' && (
+                <div className="mt-4 space-y-2">
+                  {isAuthenticated ? (
+                    <Button className="w-full" onClick={() => handleVerify()}>Link my account now</Button>
+                  ) : (
+                    <>
+                      <p className="text-sm text-slate-600">You need to sign in to link your account.</p>
+                      <Button className="w-full" onClick={() => {
+                        const token = searchParams.get('token');
+                        setLocation(`/?telegram_token=${token}`);
+                      }}>Sign in / Sign up</Button>
+                    </>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

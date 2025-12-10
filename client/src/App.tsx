@@ -119,6 +119,9 @@ function Router() {
       <Route path="/@:username" component={PublicProfile} />
       <Route path="/u/:username" component={PublicProfile} />
 
+      {/* Telegram link - public (used by Telegram web login) */}
+      <Route path="/telegram-link" component={TelegramLink} />
+      <Route path="/telegram-auth" component={TelegramLink} />
       {/* Public Routes - Accessible to everyone */}
       <Route path="/events/:id/chat" component={EventChatPage} />
       <Route path="/events/:id" component={EventDetails} />

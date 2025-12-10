@@ -187,7 +187,7 @@ export class TelegramBotService {
 
   // Format event message for Telegram
   private formatEventMessage(event: EventBroadcast): string {
-    const webAppUrl = process.env.REPLIT_DOMAINS?.split(',')[0] || 'betchat.replit.app';
+    const webAppUrl = (process.env.FRONTEND_URL || process.env.REPLIT_DOMAINS?.split(',')[0] || 'https://betchat.replit.app').replace('https://', '');
     const eventUrl = `https://${webAppUrl}/events/${event.id}/chat`;
 
     // Calculate pool total
@@ -270,7 +270,7 @@ ${timeInfo}
 
   // Format challenge message for Telegram
   private formatChallengeMessage(challenge: ChallengeBroadcast): string {
-    const webAppUrl = process.env.REPLIT_DOMAINS?.split(',')[0] || 'betchat.replit.app';
+    const webAppUrl = (process.env.FRONTEND_URL || process.env.REPLIT_DOMAINS?.split(',')[0] || 'https://betchat.replit.app').replace('https://', '');
     const challengeUrl = `https://${webAppUrl}/challenges/${challenge.id}`;
 
     // Format time
@@ -612,7 +612,7 @@ ${update.achievement ? `🎯 *Achievement:* ${update.achievement}` : ''}
   // Phase 1: Send /start response with login link
   async sendLoginLink(chatId: number, firstName: string, linkToken: string): Promise<boolean> {
     try {
-      const webAppUrl = process.env.REPLIT_DOMAINS?.split(',')[0] || 'betchat.replit.app';
+      const webAppUrl = (process.env.FRONTEND_URL || process.env.REPLIT_DOMAINS?.split(',')[0] || 'https://betchat.replit.app').replace('https://', '');
       const loginUrl = `https://${webAppUrl}/telegram-link?token=${linkToken}`;
 
       const message = `👋 *Welcome to Bantah, ${firstName}!*
@@ -695,6 +695,20 @@ Your Telegram account is now linked to your Bantah account.
         chat_id: chatId,
         text: message,
         parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: 'Return to Bot',
+                url: `https://t.me/${process.env.TELEGRAM_BOT_USERNAME || ''}`
+              },
+              {
+                text: 'Open Web Profile',
+                url: `${process.env.FRONTEND_URL || ''}/profile`
+              }
+            ]
+          ]
+        }
       });
 
       return response.data.ok;
@@ -718,7 +732,7 @@ Your Telegram account is now linked to your Bantah account.
     }
   ): Promise<boolean> {
     try {
-      const webAppUrl = process.env.REPLIT_DOMAINS?.split(',')[0] || 'betchat.replit.app';
+      const webAppUrl = (process.env.FRONTEND_URL || process.env.REPLIT_DOMAINS?.split(',')[0] || 'https://betchat.replit.app').replace('https://', '');
       const challengeUrl = `https://${webAppUrl}/challenges/${challenge.id}`;
 
       const categoryEmoji = this.getCategoryEmoji(challenge.category || '');
@@ -833,7 +847,7 @@ ${challenge.category ? `${categoryEmoji} *Category:* ${challenge.category.charAt
     currentBalance: number
   ): Promise<boolean> {
     try {
-      const webAppUrl = process.env.REPLIT_DOMAINS?.split(',')[0] || 'betchat.replit.app';
+      const webAppUrl = (process.env.FRONTEND_URL || process.env.REPLIT_DOMAINS?.split(',')[0] || 'https://betchat.replit.app').replace('https://', '');
       const walletUrl = `https://${webAppUrl}/wallet`;
 
       const shortfall = requiredAmount - currentBalance;
@@ -1358,7 +1372,7 @@ Example:
 
     if (!opponentChatId) return;
 
-    const webAppUrl = process.env.REPLIT_DOMAINS?.split(',')[0] || 'betchat.replit.app';
+    const webAppUrl = (process.env.FRONTEND_URL || process.env.REPLIT_DOMAINS?.split(',')[0] || 'https://betchat.replit.app').replace('https://', '');
 
     const message = `🎯 *New Challenge!*
 
