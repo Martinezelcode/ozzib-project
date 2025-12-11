@@ -90,14 +90,23 @@ async function upsertPrivyUser(verifiedClaims: any) {
 export async function PrivyAuthMiddleware(req: any, res: any, next: any) {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader) {
-    return res.status(401).json({ message: 'Authorization header missing' });
+  // Allow Passport session as fallback if no Privy token provided
+  if (!authHeader && req.isAuthenticated && req.isAuthenticated()) {
+    // If a session is active, attach the user cartaints (existing user object) and proceed
+    try {
+      const sessionUser = req.user;
+      if (sessionUser) {
+        req.user = sessionUser;
+        return next();
+      }
+    } catch (err) {
+      console.error('Error using session-based auth fallback:', err);
+      // fallthrough to token-based verification
+    }
   }
 
-  const token = authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ message: 'Token not found' });
+  if (!authHeader) {
+    return res.status(401).json({ message: 'Authorization header missing' });
   }
 
   try {

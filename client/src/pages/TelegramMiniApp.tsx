@@ -1,249 +1,215 @@
 import React, { useEffect, useState } from 'react';
-import { useAuth } from '@/hooks/useAuth';
+import { useQuery } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/queryClient';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 
-export default function TelegramMiniApp() {
-  const { user, isAuthenticated, isLoading, login } = useAuth();
-  const { toast } = useToast();
-  const [isTelegramWebApp, setIsTelegramWebApp] = useState(false);
-  const [isClosing, setIsClosing] = useState(false);
-
-  // Detect Telegram WebApp and auto-close on auth
-  useEffect(() => {
-    const tg = (window as any).Telegram?.WebApp;
-    if (tg) {
-      console.log('✅ Telegram WebApp detected');
-      tg.ready();
-      tg.expand();
-      setIsTelegramWebApp(true);
-    } else {
-      console.warn('⚠️ Not in Telegram WebApp context');
-      setIsTelegramWebApp(false);
-    }
-  }, []);
-
-  // Auto-close mini-app after successful auth
-  useEffect(() => {
-    if (!isLoading && isAuthenticated && user && !isClosing) {
-      console.log('✅ User authenticated:', user.username);
-      setIsClosing(true);
-
-      // Show success message and close
-      toast({
-        title: 'Account Linked!',
-        description: `Welcome ${user.firstName || user.username || 'User'}! Closing mini-app...`,
-      });
-
-      setTimeout(() => {
-        const tg = (window as any).Telegram?.WebApp;
-        if (tg) {
-          console.log('👋 Closing mini-app');
-          tg.close();
-        }
-      }, 1500);
-    }
-  }, [isAuthenticated, isLoading, user, isClosing, toast]);
-
-  const handleSignIn = async () => {
-    try {
-      console.log('🔑 Triggering Privy login...');
-      await login();
-    } catch (err: any) {
-      const errMsg = err?.message || String(err);
-      console.error('❌ Login error:', errMsg);
-      toast({
-        title: 'Sign In Failed',
-        description: errMsg,
-        variant: 'destructive',
-      });
-    }
+interface TelegramInitData {
+  user: {
+    id: number;
+    is_bot: boolean;
+    first_name: string;
+    username?: string;
+    photo_url?: string;
   };
+  auth_date: number;
+  hash: string;
+}
 
-  // Initialize Telegram WebApp
+export default function TelegramMiniApp() {
+  const [isAuthed, setIsAuthed] = useState(false);
+  const [activeTab, setActiveTab] = useState<'profile' | 'wallet' | 'challenges'>('wallet');
+  const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
+
+  // Authenticate via Telegram initData
   useEffect(() => {
     const initTelegramApp = async () => {
-      if (typeof window === 'undefined') return;
+      const tg = (window as any).Telegram?.WebApp;
+      if (!tg) {
+        toast({ title: 'Error', description: 'Please open this from Telegram', variant: 'destructive' });
+        setIsLoading(false);
+        return;
+      }
 
       try {
-        // Check if we're in a Telegram mini-app context
-        const tg = (window as any).Telegram?.WebApp;
-        if (!tg) {
-          setLinkStatus('error');
-          setErrorMessage('This page must be opened from Telegram');
-          return;
-        }
-
-        // Initialize the WebApp
         tg.ready();
         tg.expand();
 
-        // Get the initData (contains user + signed hash)
+        // Get initData (Telegram-signed)
         const initData = tg.initData;
-        console.log('🔍 Telegram WebApp initData:', initData);
         if (!initData) {
-          console.error('❌ initData is empty or undefined');
-          setLinkStatus('error');
-          setErrorMessage('Unable to verify Telegram session');
-          return;
+          throw new Error('No initData');
         }
 
-        // Parse initData to extract user info
+        // Parse initData
         const params = new URLSearchParams(initData);
         const userStr = params.get('user');
-        if (!userStr) {
-          setLinkStatus('error');
-          setErrorMessage('Unable to get Telegram user info');
-          return;
+        const authDate = params.get('auth_date');
+        const hash = params.get('hash');
+
+        if (!userStr || !hash) {
+          throw new Error('Missing required Telegram data');
         }
 
-        const userData: TelegramWebAppData = {
-          user: JSON.parse(userStr),
-          start_param: params.get('start_param') || undefined,
-          auth_date: parseInt(params.get('auth_date') || '0'),
-          hash: params.get('hash') || '',
-        };
+        const user = JSON.parse(userStr);
+        const data: TelegramInitData = { user, auth_date: parseInt(authDate || '0'), hash };
 
-        setTelegramData(userData);
-        console.log('✅ Telegram WebApp initialized:', userData);
-        console.log('🔐 isAuthenticated:', isAuthenticated);
-
-        // If user is already authenticated, attempt to link immediately
-        if (isAuthenticated && userData.user) {
-          console.log('👤 User authenticated, attempting link...');
-          await attemptLink(userData);
+        // Authenticate with backend
+        const response = await apiRequest('POST', '/api/telegram/mini-app/auth', { initData: data });
+        if (response.success) {
+          console.log('✅ Authenticated:', response.user);
+          setIsAuthed(true);
         } else {
-          // Otherwise show auth prompt
-          console.log('⏳ Awaiting authentication...');
-          setLinkStatus('awaiting-auth');
+          throw new Error(response.message || 'Auth failed');
         }
       } catch (error) {
-        console.error('Error initializing Telegram WebApp:', error);
-        setLinkStatus('error');
-        setErrorMessage('Failed to initialize. Please restart from Telegram.');
+        console.error('❌ Auth error:', error);
+        toast({ title: 'Auth Failed', description: String(error), variant: 'destructive' });
+      } finally {
+        setIsLoading(false);
       }
     };
 
     initTelegramApp();
-  }, [isAuthenticated]);
+  }, [toast]);
 
-  const attemptLink = async (data: TelegramWebAppData) => {
-    if (!data.user || !data.hash) {
-      setLinkStatus('error');
-      setErrorMessage('Missing Telegram data');
-      return;
+  // Check URL params for tab routing
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab && ['profile', 'wallet', 'challenges'].includes(tab)) {
+      setActiveTab(tab as 'profile' | 'wallet' | 'challenges');
     }
+  }, []);
 
-    setLinkStatus('linking');
-    setIsLinking(true);
+  // Fetch data only when authenticated
+  const { data: profileData, isLoading: profileLoading } = useQuery({
+    queryKey: ['/api/profile'],
+    enabled: isAuthed,
+  });
 
-    try {
-      console.log('📤 Sending link request with data:', {
-        telegramId: data.user?.id,
-        telegramUsername: data.user?.username,
-        hash: data.hash?.substring(0, 20) + '...',
-      });
+  const { data: walletData, isLoading: walletLoading } = useQuery({
+    queryKey: ['/api/wallet/balance'],
+    enabled: isAuthed,
+  });
 
-      const response = await apiRequest('POST', '/api/telegram/mini-app/link', {
-        telegramId: data.user.id,
-        telegramUsername: data.user.username,
-        telegramFirstName: data.user.first_name,
-        initData: {
-          user: data.user,
-          auth_date: data.auth_date,
-          hash: data.hash,
-        },
-      });
+  const { data: challengesData, isLoading: challengesLoading } = useQuery({
+    queryKey: ['/api/challenges'],
+    enabled: isAuthed,
+  });
 
-      console.log('✅ Link response:', response);
-      if (response.success) {
-        console.log('🎉 Account linked successfully!');
-        setLinkStatus('success');
-        toast({
-          title: 'Account Linked!',
-          description: 'Your Telegram account has been linked successfully.',
-        });
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="text-slate-600 dark:text-slate-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
-        // Close mini-app and return to bot
-        setTimeout(() => {
-          const tg = (window as any).Telegram?.WebApp;
-          if (tg) {
-            tg.close();
-          }
-        }, 2000);
-      } else {
-        console.error('❌ Link failed:', response.message);
-        setLinkStatus('error');
-        setErrorMessage(response.message || 'Failed to link account');
-        toast({
-          title: 'Link Failed',
-          description: response.message,
-          variant: 'destructive',
-        });
-      }
-    } catch (err: any) {
-      const errMsg = err?.message || String(err);
-      console.error('❌ Link request failed:', errMsg, err);
-      setLinkStatus('error');
-      setErrorMessage('An error occurred. Please try again.');
-      toast({
-        title: 'Error',
-        description: 'Failed to link Telegram account: ' + errMsg,
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLinking(false);
-    }
-  };
+  if (!isAuthed) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-center">Authentication Error</CardTitle>
+          </CardHeader>
+          <CardContent className="text-center">
+            <p className="text-sm text-slate-600 dark:text-slate-400">Failed to authenticate. Please try opening this link from Telegram again.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
+  // Authenticated - Show tabs
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md shadow-lg">
-        <CardHeader>
-          <CardTitle className="text-center">Link Your Telegram Account</CardTitle>
-        </CardHeader>
-        <CardContent className="text-center space-y-4">
-          {isLoading ? (
-            <div className="space-y-4 py-8">
-              <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto"></div>
-              <p className="text-slate-600 dark:text-slate-400">Loading...</p>
-            </div>
-          ) : isAuthenticated && user ? (
-            <div className="space-y-4 py-8">
-              <div className="text-5xl animate-bounce">✅</div>
-              <div>
-                <p className="text-lg font-bold text-green-600 dark:text-green-400">
-                  Success!
-                </p>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
-                  Your Telegram account is linked. Closing mini-app...
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4 py-8">
-              <div className="text-4xl">🔗</div>
-              <div>
-                <p className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
-                  Get Started
-                </p>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                  Sign in with your Telegram account (or email/wallet) to link and start using Bantah.
-                </p>
-              </div>
-              <Button onClick={handleSignIn} className="w-full" size="lg" disabled={isLoading}>
-                Sign In / Sign Up
-              </Button>
-              {!isTelegramWebApp && (
-                <p className="text-xs text-yellow-600 dark:text-yellow-400">
-                  ⚠️ Open this in the Telegram mobile app for best experience.
-                </p>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-3">
+      <div className="max-w-md mx-auto space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Bantah</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="wallet">💰 Wallet</TabsTrigger>
+                <TabsTrigger value="challenges">⚔️ Challenges</TabsTrigger>
+                <TabsTrigger value="profile">👤 Profile</TabsTrigger>
+              </TabsList>
+
+              {/* Wallet Tab */}
+              <TabsContent value="wallet" className="space-y-4">
+                {walletLoading ? (
+                  <div className="text-center py-8">Loading...</div>
+                ) : walletData ? (
+                  <div className="space-y-3">
+                    <div className="bg-gradient-to-br from-green-400 to-green-600 text-white rounded-lg p-4">
+                      <p className="text-sm opacity-90">Balance</p>
+                      <p className="text-2xl font-bold">₦{walletData.balance?.toLocaleString() || '0'}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-blue-400 to-blue-600 text-white rounded-lg p-4">
+                      <p className="text-sm opacity-90">Coins</p>
+                      <p className="text-2xl font-bold">{walletData.coins || '0'}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-slate-500">No wallet data</div>
+                )}
+              </TabsContent>
+
+              {/* Challenges Tab */}
+              <TabsContent value="challenges" className="space-y-4">
+                {challengesLoading ? (
+                  <div className="text-center py-8">Loading...</div>
+                ) : challengesData && challengesData.length > 0 ? (
+                  <div className="space-y-2">
+                    {challengesData
+                      .filter((c: any) => c.status === 'active' || c.status === 'pending')
+                      .map((challenge: any) => (
+                        <div key={challenge.id} className="border rounded-lg p-3 space-y-2">
+                          <div className="font-semibold text-sm">{challenge.title}</div>
+                          <div className="flex justify-between text-xs text-slate-600">
+                            <span>₦{challenge.amount?.toLocaleString() || '0'}</span>
+                            <span className="capitalize">{challenge.status}</span>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-slate-500">No active challenges</div>
+                )}
+              </TabsContent>
+
+              {/* Profile Tab */}
+              <TabsContent value="profile" className="space-y-4">
+                {profileData ? (
+                  <div className="space-y-3">
+                    <div className="rounded-lg border p-4">
+                      <p className="text-sm text-slate-600">Username</p>
+                      <p className="font-semibold">{profileData.username || 'N/A'}</p>
+                    </div>
+                    <div className="rounded-lg border p-4">
+                      <p className="text-sm text-slate-600">Level</p>
+                      <p className="font-semibold">Lvl {profileData.level || '1'}</p>
+                    </div>
+                    <div className="rounded-lg border p-4">
+                      <p className="text-sm text-slate-600">XP</p>
+                      <p className="font-semibold">{profileData.xp || '0'}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-slate-500">No profile data</div>
+                )}
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

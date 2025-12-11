@@ -2390,40 +2390,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const update = req.body;
 
-      // Handle /start command
+      // Handle /start command - Always show mini-app button
       if (update.message && update.message.text && update.message.text.startsWith('/start')) {
         const chatId = update.message.chat.id;
-        const username = update.message.from.username;
         const firstName = update.message.from.first_name || 'User';
 
-        console.log(`📱 Received /start from Telegram user ${chatId} (@${username})`);
+        console.log(`📱 Received /start from Telegram user ${chatId}`);
 
-        // Check if user is already linked
-        const { TelegramLinkingService } = await import('./telegramLinking');
-        const existingUser = await TelegramLinkingService.getUserByTelegramId(chatId);
-
-        if (existingUser) {
-          const telegramBot = getTelegramBot();
-          if (telegramBot) {
-            await telegramBot.sendErrorMessage(chatId, 'already_linked');
-          }
-          return res.json({ ok: true });
-        }
-
-        // Generate link token
-        const linkToken = TelegramLinkingService.generateLinkToken(chatId, username, firstName);
-
-        // Send login link
         const telegramBot = getTelegramBot();
         if (telegramBot) {
-          await telegramBot.sendLoginLink(chatId, firstName, linkToken);
+          await telegramBot.sendStartMessage(chatId, firstName);
         }
+        return res.json({ ok: true });
       }
 
-      res.json({ ok: true });
+      // Handle /balance command
+      if (update.message && update.message.text && update.message.text.startsWith('/balance')) {
+        const chatId = update.message.chat.id;
+        const telegramId = update.message.from.id.toString();
+
+        const telegramBot = getTelegramBot();
+        if (telegramBot) {
+          const { TelegramLinkingService } = await import('./telegramLinking');
+          const user = await TelegramLinkingService.getUserByTelegramId(telegramId);
+
+          if (!user) {
+            await telegramBot.sendMessage(chatId, '💰 *Your Wallet*\n\nNo account linked yet. Open the mini-app to get started!');
+          } else {
+            const balance = await storage.getUserBalance(user.id);
+            await telegramBot.sendBalanceNotification(chatId, parseInt(balance.balance || '0'), balance.coins || 0);
+          }
+        }
+        return res.json({ ok: true });
+      }
+
+      // Handle /mychallenges command
+      if (update.message && update.message.text && update.message.text.startsWith('/mychallenges')) {
+        const chatId = update.message.chat.id;
+        const telegramId = update.message.from.id.toString();
+
+        const telegramBot = getTelegramBot();
+        if (telegramBot) {
+          const { TelegramLinkingService } = await import('./telegramLinking');
+          const user = await TelegramLinkingService.getUserByTelegramId(telegramId);
+
+          if (!user) {
+            await telegramBot.sendMessage(chatId, '⚔️ *Your Challenges*\n\nNo account linked yet. Open the mini-app to get started!');
+          } else {
+            const challenges = await storage.getChallenges(user.id, 10);
+            const activeChallenges = challenges.filter((c: any) => c.status === 'active' || c.status === 'pending');
+            await telegramBot.sendChallengesNotification(chatId, activeChallenges.length);
+          }
+        }
+        return res.json({ ok: true });
+      }
+
+      return res.json({ ok: true });
     } catch (error) {
-      console.error('❌ Error handling Telegram webhook:', error);
-      res.json({ ok: true }); // Always return ok to Telegram
+      console.error('❌ Webhook error:', error);
+      res.json({ ok: true });
     }
   });
 
@@ -2573,6 +2598,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error('❌ Error linking mini-app account:', error);
+      res.status(500).json({ success: false, message: 'Server error' });
+    }
+  });
+
+  // Telegram Mini-App: Auth endpoint (Telegram-only login)
+  // Verify initData, create or get user, then create a server session via req.login
+  app.post('/api/telegram/mini-app/auth', async (req, res) => {
+    try {
+      const { initData } = req.body;
+      if (!initData || !initData.hash) {
+        return res.status(400).json({ success: false, message: 'Missing initData' });
+      }
+
+      const isValid = validateTelegramWebAppData(initData, process.env.TELEGRAM_BOT_TOKEN || '');
+      if (!isValid) {
+        return res.status(400).json({ success: false, message: 'Invalid Telegram signature' });
+      }
+
+      const telegramUser = initData.user;
+      if (!telegramUser || !telegramUser.id) {
+        return res.status(400).json({ success: false, message: 'Invalid Telegram user data' });
+      }
+
+      // Create or find user in DB
+      const telegramId = telegramUser.id.toString();
+      const telegramUserId = `telegram_${telegramId}`;
+      let user = await storage.getUser(telegramUserId);
+      if (!user) {
+        const username = telegramUser.username || `tg_${telegramId}`;
+        user = await storage.createUser({
+          id: telegramUserId,
+          firstName: telegramUser.first_name || username,
+          username: username,
+          email: `${telegramUserId}@telegram.betchat.local`,
+          profileImageUrl: telegramUser.photo_url || null,
+          isTelegramUser: true,
+          telegramId: telegramId,
+          coins: 0,
+          points: 0,
+          level: 1,
+          xp: 0,
+        });
+      }
+
+      // Login the user (passport session)
+      req.login(user, (err: any) => {
+        if (err) {
+          console.error('Error logging in Telegram user:', err);
+          return res.status(500).json({ success: false, message: 'Failed to create session' });
+        }
+        console.log(`✅ Telegram session created for ${user.id}`);
+        return res.json({ success: true, user: { id: user.id, username: user.username, firstName: user.firstName } });
+      });
+    } catch (error) {
+      console.error('❌ Telegram mini-app auth error:', error);
       res.status(500).json({ success: false, message: 'Server error' });
     }
   });

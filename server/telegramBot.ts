@@ -609,6 +609,46 @@ ${update.achievement ? `🎯 *Achievement:* ${update.achievement}` : ''}
     }
   }
 
+  // Simplified /start message - just open mini-app
+  async sendStartMessage(chatId: number, firstName: string): Promise<boolean> {
+    try {
+      const miniAppUrl = (process.env.FRONTEND_URL || process.env.REPLIT_DOMAINS?.split(',')[0] || 'https://betchat.replit.app').replace('https://', '');
+      const miniAppFullUrl = `https://${miniAppUrl}/telegram-mini-app`;
+
+      const message = `👋 *Welcome to Bantah, ${firstName}!*
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🚀 Open the app below to:
+✅ Create & accept challenges
+✅ Manage your wallet
+✅ Track your stats
+✅ Get instant updates`;
+
+      const response = await axios.post(`${this.baseUrl}/sendMessage`, {
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: '🎯 Open Bantah',
+                web_app: { url: miniAppFullUrl }
+              }
+            ]
+          ]
+        }
+      });
+
+      return response.data.ok;
+    } catch (error) {
+      console.error('❌ Error sending start message:', error);
+      return false;
+    }
+  }
+
+
   // Phase 1: Send /start response with login link (via mini-app)
   async sendLoginLink(chatId: number, firstName: string, linkToken: string): Promise<boolean> {
     try {
@@ -943,6 +983,134 @@ Use /start to try linking again.`;
     }
   }
 
+  // Phase 2: Send quick-access menu with mini-app buttons
+  async sendQuickAccessMenu(chatId: number, username: string): Promise<boolean> {
+    try {
+      const miniAppUrl = (process.env.FRONTEND_URL || process.env.REPLIT_DOMAINS?.split(',')[0] || 'https://betchat.replit.app').replace('https://', '');
+      const baseUrl = `https://${miniAppUrl}/telegram-mini-app`;
+
+      const message = `👋 *Welcome to Bantah, @${username}!*
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🔥 *Quick Access*
+
+Use the buttons below to jump straight into your favorite features:`;
+
+      const response = await axios.post(`${this.baseUrl}/sendMessage`, {
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: '💰 Wallet',
+                web_app: { url: `${baseUrl}?tab=wallet` }
+              },
+              {
+                text: '👤 Profile',
+                web_app: { url: `${baseUrl}?tab=profile` }
+              }
+            ],
+            [
+              {
+                text: '⚔️ Challenges',
+                web_app: { url: `${baseUrl}?tab=challenges` }
+              },
+              {
+                text: '🎯 Create New',
+                url: `${baseUrl}?action=create`
+              }
+            ]
+          ]
+        }
+      });
+
+      return response.data.ok;
+    } catch (error) {
+      console.error('❌ Error sending quick access menu:', error);
+      return false;
+    }
+  }
+
+  // Send balance notification with wallet button
+  async sendBalanceNotification(chatId: number, balance: number, coins: number): Promise<boolean> {
+    try {
+      const miniAppUrl = (process.env.FRONTEND_URL || process.env.REPLIT_DOMAINS?.split(',')[0] || 'https://betchat.replit.app').replace('https://', '');
+      const walletUrl = `https://${miniAppUrl}/telegram-mini-app?tab=wallet`;
+
+      const message = `💰 *Your Wallet*
+
+━━━━━━━━━━━━━━━━━━━━━
+💵 Balance: ₦${balance.toLocaleString()}
+🪙 Coins: ${coins}
+━━━━━━━━━━━━━━━━━━━━━`;
+
+      const response = await axios.post(`${this.baseUrl}/sendMessage`, {
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: '💳 Add Funds',
+                web_app: { url: walletUrl }
+              }
+            ]
+          ]
+        }
+      });
+
+      return response.data.ok;
+    } catch (error) {
+      console.error('❌ Error sending balance notification:', error);
+      return false;
+    }
+  }
+
+  // Send challenges list with quick view button
+  async sendChallengesNotification(chatId: number, challengeCount: number): Promise<boolean> {
+    try {
+      const miniAppUrl = (process.env.FRONTEND_URL || process.env.REPLIT_DOMAINS?.split(',')[0] || 'https://betchat.replit.app').replace('https://', '');
+      const challengesUrl = `https://${miniAppUrl}/telegram-mini-app?tab=challenges`;
+
+      const message = `⚔️ *Your Challenges*
+
+━━━━━━━━━━━━━━━━━━━━━
+🔥 Active Challenges: ${challengeCount}
+━━━━━━━━━━━━━━━━━━━━━
+
+Tap below to view and manage your challenges!`;
+
+      const response = await axios.post(`${this.baseUrl}/sendMessage`, {
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: '👀 View All',
+                web_app: { url: challengesUrl }
+              },
+              {
+                text: '➕ Create New',
+                callback_data: 'create_challenge'
+              }
+            ]
+          ]
+        }
+      });
+
+      return response.data.ok;
+    } catch (error) {
+      console.error('❌ Error sending challenges notification:', error);
+      return false;
+    }
+  }
+
   // Polling for updates (alternative to webhooks)
   private pollingActive: boolean = false;
   private lastUpdateId: number = 0;
@@ -1026,22 +1194,14 @@ Use /start to try linking again.`;
       if (message?.text) {
         const chatId = message.chat.id;
         const text = message.text;
-        const username = message.from?.username;
         const firstName = message.from?.first_name || 'User';
         const telegramId = message.from?.id.toString();
 
-        // Handle /start command
+        // Handle /start command - Always open mini-app
         if (text.startsWith('/start')) {
-          console.log(`📱 Received /start from Telegram user ${chatId} (@${username})`);
-
-          const existingUser = await TelegramLinkingService.getUserByTelegramId(chatId);
-          if (existingUser) {
-            await this.sendErrorMessage(chatId, 'already_linked');
-            return;
-          }
-
-          const linkToken = TelegramLinkingService.generateLinkToken(chatId, username, firstName);
-          await this.sendLoginLink(chatId, firstName, linkToken);
+          console.log(`📱 Received /start from Telegram user ${chatId}`);
+          await this.sendStartMessage(chatId, firstName);
+          return;
         }
 
         // Handle /help command
@@ -1051,11 +1211,13 @@ Use /start to try linking again.`;
 
         // Handle /balance command
         else if (text.startsWith('/balance')) {
+          console.log(`📊 Received /balance from Telegram user ${telegramId}`);
           await this.handleBalanceCommand(chatId, telegramId!);
         }
 
         // Handle /mychallenges command
         else if (text.startsWith('/mychallenges')) {
+          console.log(`⚔️ Received /mychallenges from Telegram user ${telegramId}`);
           await this.handleMyChallengesCommand(chatId, telegramId!);
         }
 
@@ -1211,26 +1373,18 @@ Type /start to link your account first!`;
     try {
       const user = await storage.getUserByTelegramId(telegramId);
       if (!user) {
-        await this.bot.sendMessage(chatId, '❌ Your account is not linked. Use /start to link your account.');
+        const message = `💰 *Your Wallet*
+
+No account linked yet. Open the mini-app to get started!`;
+        await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
         return;
       }
 
-      const [wallet] = await db
-        .select()
-        .from(schema.wallets)
-        .where(eq(schema.wallets.userId, user.id))
-        .limit(1);
-
-      const balance = wallet?.balance || 0;
-
-      await this.bot.sendMessage(
-        chatId,
-        `💰 *Your Wallet*\n\nBalance: ${balance} coins\nUser: @${user.username}`,
-        { parse_mode: 'Markdown' }
-      );
+      const balance = await storage.getUserBalance(user.id);
+      await this.sendBalanceNotification(chatId, parseInt(balance.balance || '0'), balance.coins || 0);
     } catch (error) {
       console.error('Error getting balance:', error);
-      await this.bot.sendMessage(chatId, '❌ Failed to get balance');
+      await this.bot.sendMessage(chatId, '❌ Failed to fetch balance. Try again in the mini-app.');
     }
   }
 
@@ -1238,44 +1392,20 @@ Type /start to link your account first!`;
     try {
       const user = await storage.getUserByTelegramId(telegramId);
       if (!user) {
-        await this.bot.sendMessage(chatId, '❌ Your account is not linked. Use /start to link your account.');
+        const message = `⚔️ *Your Challenges*
+
+No account linked yet. Open the mini-app to get started!`;
+        await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
         return;
       }
 
-      const challenges = await db
-        .select()
-        .from(schema.challenges)
-        .where(
-          or(
-            eq(schema.challenges.creatorId, user.id),
-            eq(schema.challenges.opponentId, user.id)
-          )
-        )
-        .orderBy(desc(schema.challenges.createdAt))
-        .limit(10);
-
-      const activeChallenges = challenges.filter(c => c.status === 'pending' || c.status === 'active');
-
-      if (activeChallenges.length === 0) {
-        await this.bot.sendMessage(chatId, '📋 You have no active challenges');
-        return;
-      }
-
-      let message = '📋 *Your Active Challenges*\n\n';
-      for (const challenge of activeChallenges) {
-        const isCreator = challenge.creatorId === user.id;
-        const opponent = isCreator 
-          ? await storage.getUser(challenge.opponentId)
-          : await storage.getUser(challenge.creatorId);
-
-        message += `• ${challenge.amount} coins vs @${opponent?.username || 'Unknown'}\n`;
-        message += `  Status: ${challenge.status}\n\n`;
-      }
-
-      await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      const challenges = await storage.getChallenges(user.id, 10);
+      const activeChallenges = challenges.filter((c: any) => c.status === 'active' || c.status === 'pending');
+      
+      await this.sendChallengesNotification(chatId, activeChallenges.length);
     } catch (error) {
       console.error('Error getting challenges:', error);
-      await this.bot.sendMessage(chatId, '❌ Failed to get challenges');
+      await this.bot.sendMessage(chatId, '❌ Failed to fetch challenges. Try again in the mini-app.');
     }
   }
 
