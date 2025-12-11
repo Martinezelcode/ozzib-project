@@ -609,11 +609,11 @@ ${update.achievement ? `🎯 *Achievement:* ${update.achievement}` : ''}
     }
   }
 
-  // Phase 1: Send /start response with login link
+  // Phase 1: Send /start response with login link (via mini-app)
   async sendLoginLink(chatId: number, firstName: string, linkToken: string): Promise<boolean> {
     try {
-      const webAppUrl = (process.env.FRONTEND_URL || process.env.REPLIT_DOMAINS?.split(',')[0] || 'https://betchat.replit.app').replace('https://', '');
-      const loginUrl = `https://${webAppUrl}/telegram-link?token=${linkToken}`;
+      const miniAppUrl = (process.env.FRONTEND_URL || process.env.REPLIT_DOMAINS?.split(',')[0] || 'https://betchat.replit.app').replace('https://', '');
+      const miniAppFullUrl = `https://${miniAppUrl}/telegram-mini-app`;
 
       const message = `👋 *Welcome to Bantah, ${firstName}!*
 
@@ -621,13 +621,8 @@ ${update.achievement ? `🎯 *Achievement:* ${update.achievement}` : ''}
 
 To start using Bantah through Telegram, you need to link your Telegram account to your Bantah account.
 
-Click the button below to securely link your account:
+Click the button below to securely link your account. You'll be able to:
 
-━━━━━━━━━━━━━━━━━━━━━
-🔐 [*LINK MY ACCOUNT*](${loginUrl})
-━━━━━━━━━━━━━━━━━━━━━
-
-After linking, you'll be able to:
 ✅ Create challenges from Telegram
 ✅ Accept challenges with one tap
 ✅ Get instant notifications
@@ -646,7 +641,9 @@ After linking, you'll be able to:
             [
               {
                 text: '🔗 Link My Account',
-                url: loginUrl
+                web_app: {
+                  url: miniAppFullUrl
+                }
               }
             ]
           ]
@@ -654,14 +651,14 @@ After linking, you'll be able to:
       });
 
       if (response.data.ok) {
-        console.log(`✅ Login link sent to Telegram user ${chatId}`);
+        console.log(`✅ Mini-app link sent to Telegram user ${chatId}`);
         return true;
       } else {
-        console.error('❌ Failed to send login link:', response.data);
+        console.error('❌ Failed to send mini-app link:', response.data);
         return false;
       }
     } catch (error) {
-      console.error('❌ Error sending login link:', error);
+      console.error('❌ Error sending mini-app link:', error);
       return false;
     }
   }

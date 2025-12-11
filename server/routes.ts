@@ -2504,6 +2504,119 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Telegram Mini-App: Link account endpoint
+  // This endpoint is called from the Telegram mini-app after the user is authenticated with Privy
+  app.post('/api/telegram/mini-app/link', PrivyAuthMiddleware, async (req: AuthenticatedRequest, res) => {
+    try {
+      const userId = getUserId(req);
+      const { telegramId, telegramUsername, telegramFirstName, initData } = req.body;
+
+      if (!telegramId || !initData || !initData.hash) {
+        return res.status(400).json({ success: false, message: 'Missing Telegram data' });
+      }
+
+      console.log(`🔍 Mini-app link request - User: ${userId}, Telegram ID: ${telegramId}`);
+
+      // Verify the Telegram initData signature
+      // The initData is a URL-encoded string with format: user=%7B...%7D&auth_date=...&hash=...
+      const { TelegramLinkingService } = await import('./telegramLinking');
+      
+      // Validate the Telegram signature
+      try {
+        const isValid = validateTelegramWebAppData(initData, process.env.TELEGRAM_BOT_TOKEN || '');
+        if (!isValid) {
+          console.log('❌ Invalid Telegram signature');
+          return res.json({
+            success: false,
+            message: 'Invalid Telegram signature. Please use the official mini-app link.'
+          });
+        }
+      } catch (signError) {
+        console.error('Error validating Telegram signature:', signError);
+        return res.json({
+          success: false,
+          message: 'Failed to validate Telegram data'
+        });
+      }
+
+      // Link the Telegram account
+      const linked = await TelegramLinkingService.linkTelegramAccount(
+        userId,
+        telegramId.toString(),
+        telegramUsername || `user_${telegramId}`
+      );
+
+      if (!linked) {
+        console.log(`❌ Account linking failed - already linked`);
+        return res.json({
+          success: false,
+          message: 'This Telegram account is already linked to another user.'
+        });
+      }
+
+      // Send confirmation to Telegram
+      const telegramBot = getTelegramBot();
+      const user = await storage.getUser(userId);
+      if (telegramBot && user) {
+        await telegramBot.sendAccountLinkedConfirmation(
+          telegramId,
+          user.username || user.firstName || 'User',
+          user.coins || 0
+        );
+      }
+
+      console.log(`✅ Successfully linked Telegram account ${telegramId} to user ${userId}`);
+
+      res.json({
+        success: true,
+        message: 'Account linked successfully!'
+      });
+    } catch (error) {
+      console.error('❌ Error linking mini-app account:', error);
+      res.status(500).json({ success: false, message: 'Server error' });
+    }
+  });
+
+  // Helper function to validate Telegram WebApp initData
+  function validateTelegramWebAppData(
+    initData: any,
+    botToken: string
+  ): boolean {
+    try {
+      // Extract hash from initData
+      const hash = initData.hash;
+      if (!hash) return false;
+
+      // Create data check string (all params except hash, sorted by key)
+      const dataCheckString = Object.entries(initData)
+        .filter(([key]) => key !== 'hash')
+        .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+        .map(([key, value]) => {
+          if (typeof value === 'object') {
+            return `${key}=${JSON.stringify(value)}`;
+          }
+          return `${key}=${value}`;
+        })
+        .join('\n');
+
+      // Create HMAC-SHA256
+      const secretKey = crypto
+        .createHmac('sha256', 'WebAppData')
+        .update(botToken)
+        .digest();
+
+      const computedHash = crypto
+        .createHmac('sha256', secretKey)
+        .update(dataCheckString)
+        .digest('hex');
+
+      return computedHash === hash;
+    } catch (error) {
+      console.error('Error validating Telegram data:', error);
+      return false;
+    }
+  }
+
   // Test Telegram broadcast endpoint
   app.post('/api/telegram/test-broadcast', PrivyAuthMiddleware, async (req: AuthenticatedRequest, res) => {
     try {

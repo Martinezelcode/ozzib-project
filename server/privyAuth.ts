@@ -62,6 +62,24 @@ async function upsertPrivyUser(verifiedClaims: any) {
       });
     }
     
+    // Extract Telegram data from Privy linkedAccounts if user signed in with Telegram
+    if (verifiedClaims.linkedAccounts) {
+      const telegramAccount = verifiedClaims.linkedAccounts.find((account: any) => account.type === 'telegram');
+      if (telegramAccount && telegramAccount.telegramUserId) {
+        console.log(`🔗 Telegram account detected in Privy claims: ${telegramAccount.telegramUserId}`);
+        
+        // Update user with Telegram ID if not already set
+        if (!dbUser.telegramId) {
+          dbUser = await storage.updateUserTelegramInfo(userId, {
+            telegramId: telegramAccount.telegramUserId.toString(),
+            telegramUsername: telegramAccount.telegramUsername || `tg_${telegramAccount.telegramUserId}`,
+            isTelegramUser: true,
+          });
+          console.log(`✅ User ${userId} linked with Telegram ID ${telegramAccount.telegramUserId}`);
+        }
+      }
+    }
+    
     return dbUser;
   } catch (error) {
     console.error('Error upserting Privy user:', error);

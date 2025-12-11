@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/contexts/ThemeProvider";
   import { EventsSearchProvider } from "./context/EventsSearchContext";
 import { useAuth } from "@/hooks/useAuth";
 import { useNotifications } from "@/hooks/useNotifications";
+import { useToast } from '@/hooks/use-toast';
 import { useEffect, useState } from "react";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
@@ -50,6 +51,7 @@ import { WebsiteTour, useTour } from "@/components/WebsiteTour";
 import { SplashScreen } from "@/components/SplashScreen"; //Import Splashscreen
 import TelegramTest from "./pages/TelegramTest";
 import TelegramLink from "@/pages/TelegramLink";
+import TelegramMiniApp from "@/pages/TelegramMiniApp";
 import Bantzz from "./pages/Bantzz";
 import Stories from "./pages/Stories";
 import BantMap from "./pages/BantMap";
@@ -84,6 +86,8 @@ function Router() {
   // Initialize notifications for authenticated users
   const notifications = useNotifications();
 
+  const { toast } = useToast();
+
   // Initialize automatic daily login popup
   const { showDailyLoginPopup, closeDailyLoginPopup, dailyLoginStatus } = useDailyLoginPopup();
 
@@ -98,6 +102,81 @@ function Router() {
       </div>
     );
   }
+
+  // Auto-complete Telegram link flow after login
+  useEffect(() => {
+    if (isLoading) return;
+
+    if (!isAuthenticated) return;
+
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const telegramTokenFromUrl = params.get('telegram_token');
+      const telegramTokenFromStorage = typeof window !== 'undefined' ? sessionStorage.getItem('telegram_token') : null;
+      const telegramToken = telegramTokenFromUrl || telegramTokenFromStorage;
+
+      if (!telegramToken) return;
+
+      // If token exists in sessionStorage but user isn't on /telegram-link, navigate there (no reload)
+      try {
+        const stored = telegramTokenFromStorage;
+        if (stored && !telegramTokenFromUrl && window.location.pathname !== '/telegram-link') {
+          const newPath = `/telegram-link?telegram_token=${stored}`;
+          window.history.replaceState({}, '', newPath);
+        }
+      } catch (_) {}
+
+      (async () => {
+        const maxAttempts = 5;
+        let attempt = 0;
+        let success = false;
+
+        while (attempt < maxAttempts && !success) {
+          attempt += 1;
+          try {
+            const res = await apiRequest('GET', `/api/telegram/verify-link?token=${telegramToken}`);
+
+            if (res && res.success) {
+              toast({ title: 'Telegram Linked', description: 'Your Telegram account was linked after sign-in.' });
+              success = true;
+              break;
+            } else {
+              // If backend reports invalid token or already linked, stop retrying
+              toast({ title: 'Telegram Link Failed', description: res?.message || 'Unable to link Telegram account', variant: 'destructive' });
+              break;
+            }
+          } catch (err: any) {
+            // If auth wasn't ready yet (401) or token not present, retry after a short delay
+            const message = String(err.message || err);
+            const isAuthError = message.includes('401') || message.toLowerCase().includes('authorization');
+
+            if (isAuthError && attempt < maxAttempts) {
+              await new Promise((r) => setTimeout(r, attempt * 1000));
+              continue;
+            }
+
+            // Non-auth error or out of retries
+            toast({ title: 'Telegram Link Error', description: 'Failed to verify Telegram link after sign-in', variant: 'destructive' });
+            break;
+          }
+        }
+
+        // cleanup
+        try {
+          params.delete('telegram_token');
+          const newSearch = params.toString();
+          const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '');
+          window.history.replaceState({}, '', newUrl);
+        } catch (_) {}
+
+        try {
+          sessionStorage.removeItem('telegram_token');
+        } catch (_) {}
+      })();
+    } catch (error) {
+      // ignore
+    }
+  }, [isAuthenticated, isLoading, toast]);
 
 
 
@@ -122,6 +201,8 @@ function Router() {
       {/* Telegram link - public (used by Telegram web login) */}
       <Route path="/telegram-link" component={TelegramLink} />
       <Route path="/telegram-auth" component={TelegramLink} />
+      {/* Telegram mini-app - embedded in Telegram */}
+      <Route path="/telegram-mini-app" component={TelegramMiniApp} />
       {/* Public Routes - Accessible to everyone */}
       <Route path="/events/:id/chat" component={EventChatPage} />
       <Route path="/events/:id" component={EventDetails} />
