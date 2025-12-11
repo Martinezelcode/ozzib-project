@@ -1,6 +1,6 @@
 
 import { TelegramClient } from "telegram";
-import { StringSession } from "telegram/sessions";
+import { StringSession } from "telegram/sessions/index.js";
 import input from "input";
 
 // This script helps you get the session string for the first time

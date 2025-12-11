@@ -1,7 +1,7 @@
 
 import { TelegramClient, Api } from "telegram";
-import { StringSession } from "telegram/sessions";
-import { NewMessage } from "telegram/events";
+import { StringSession } from "telegram/sessions/index.js";
+import { NewMessage } from "telegram/events/index.js";
 import Pusher from "pusher";
 import { storage } from "./storage";
 
