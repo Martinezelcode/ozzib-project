@@ -48,6 +48,7 @@ function formatBalance(amount: number): string {
 import axios from "axios";
 import fileUpload from "express-fileupload";
 import { adminAuth } from "./adminAuth";
+import { registerTelegramMiniAppRoutes } from "./telegramMiniAppApi";
 import { desc, or, not, isNull, count, sum, avg } from "drizzle-orm";
 
 // Initialize Pusher
@@ -3908,6 +3909,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register all other routes
   app.use('/api', ogMetadataRouter);
+
+  // Register Telegram Mini-App API routes
+  registerTelegramMiniAppRoutes(app);
 
   return httpServer;
 }
