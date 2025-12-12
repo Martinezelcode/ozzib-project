@@ -17,6 +17,7 @@ if (fs.existsSync(envPath)) {
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const MAIN_API_URL = (process.env.MAIN_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+const MINI_APP_URL = (process.env.MINI_APP_URL || MAIN_API_URL).replace(/\/$/, '');
 
 if (!TOKEN) {
   throw new Error('TELEGRAM_BOT_TOKEN environment variable is required');
@@ -26,6 +27,7 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 
 console.log('🤖 Bantah Telegram Bot started (polling mode)');
 console.log(`📡 Main API URL: ${MAIN_API_URL}`);
+console.log(`🎯 Mini-app URL: ${MINI_APP_URL}/telegram-mini-app`);
 
 // /start command
 bot.onText(/\/start/, async (msg) => {
@@ -36,7 +38,7 @@ bot.onText(/\/start/, async (msg) => {
   console.log(`📱 Received /start from Telegram user ${telegramId}`);
 
   try {
-    const miniAppUrl = 'https://betchat.replit.app/telegram-mini-app';
+    const miniAppUrl = `${MINI_APP_URL}/telegram-mini-app`;
 
     const response = await bot.sendMessage(chatId, `👋 *Welcome to Bantah, ${firstName}!*
 
@@ -86,14 +88,14 @@ bot.onText(/\/balance/, async (msg) => {
 Balance: ₦${parseInt(balance).toLocaleString()}
 Coins: 🪙 ${coins}
 
-[Open Wallet in App](https://betchat.replit.app/telegram-mini-app?tab=wallet)`, {
+[Open Wallet in App](${MINI_APP_URL}/telegram-mini-app?tab=wallet)`, {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
             [
               {
                 text: '💼 View in Wallet',
-                web_app: { url: 'https://betchat.replit.app/telegram-mini-app?tab=wallet' }
+                web_app: { url: `${MINI_APP_URL}/telegram-mini-app?tab=wallet` }
               }
             ]
           ]
@@ -107,7 +109,7 @@ Coins: 🪙 ${coins}
             [
               {
                 text: '🚀 Open App',
-                web_app: { url: 'https://betchat.replit.app/telegram-mini-app' }
+                web_app: { url: `${MINI_APP_URL}/telegram-mini-app` }
               }
             ]
           ]
@@ -145,7 +147,7 @@ View all your challenges in the app!`, {
             [
               {
                 text: '⚔️ View Challenges',
-                web_app: { url: 'https://betchat.replit.app/telegram-mini-app?tab=challenges' }
+                web_app: { url: `${MINI_APP_URL}/telegram-mini-app?tab=challenges` }
               }
             ]
           ]
@@ -159,7 +161,7 @@ View all your challenges in the app!`, {
             [
               {
                 text: '🚀 Open App',
-                web_app: { url: 'https://betchat.replit.app/telegram-mini-app' }
+                web_app: { url: `${MINI_APP_URL}/telegram-mini-app` }
               }
             ]
           ]
