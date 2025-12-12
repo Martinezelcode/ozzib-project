@@ -8,6 +8,8 @@ import { createTelegramBot } from "./telegramBot";
 import { NotificationAlgorithmService } from "./notificationAlgorithm";
 import { seedAdmin } from "./seedAdmin";
 import cors from 'cors';
+import fs from 'fs';
+import path from 'path';
 
 const app = express();
 
@@ -117,6 +119,15 @@ app.use((req, res, next) => {
     await setupVite(app, server);
   } else {
     serveStatic(app);
+  }
+
+  // Fallback: Serve SPA routes from compiled dist in dev mode for testing
+  // This allows testing the compiled build while still running npm run dev
+  const distPublicPath = path.resolve(import.meta.dirname, '../dist/public');
+  if (fs.existsSync(distPublicPath)) {
+    app.get('/telegram-mini-app', (_req, res) => {
+      res.sendFile(path.resolve(distPublicPath, 'index.html'));
+    });
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
