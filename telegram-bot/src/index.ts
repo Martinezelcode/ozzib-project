@@ -1,6 +1,20 @@
 import TelegramBot from 'node-telegram-bot-api';
 import axios from 'axios';
 
+// Load .env file
+const path = require('path');
+const fs = require('fs');
+const envPath = path.join(__dirname, '..', '.env');
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf-8');
+  envContent.split('\n').forEach((line: string) => {
+    const [key, value] = line.split('=');
+    if (key && value && !key.startsWith('#')) {
+      process.env[key.trim()] = value.trim();
+    }
+  });
+}
+
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const MAIN_API_URL = (process.env.MAIN_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
