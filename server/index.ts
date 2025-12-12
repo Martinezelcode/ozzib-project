@@ -112,6 +112,15 @@ app.use((req, res, next) => {
     throw err;
   });
 
+  // Serve SPA routes from compiled dist BEFORE Vite middleware
+  // This allows testing the compiled build while still running npm run dev
+  const distPublicPath = path.resolve(import.meta.dirname, '../dist/public');
+  if (fs.existsSync(distPublicPath)) {
+    app.get('/telegram-mini-app', (_req, res) => {
+      res.sendFile(path.resolve(distPublicPath, 'index.html'));
+    });
+  }
+
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
@@ -119,15 +128,6 @@ app.use((req, res, next) => {
     await setupVite(app, server);
   } else {
     serveStatic(app);
-  }
-
-  // Fallback: Serve SPA routes from compiled dist in dev mode for testing
-  // This allows testing the compiled build while still running npm run dev
-  const distPublicPath = path.resolve(import.meta.dirname, '../dist/public');
-  if (fs.existsSync(distPublicPath)) {
-    app.get('/telegram-mini-app', (_req, res) => {
-      res.sendFile(path.resolve(distPublicPath, 'index.html'));
-    });
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
