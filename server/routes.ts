@@ -2657,6 +2657,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Telegram Bot API: Get user data for bot
+  // Called by the independent Telegram bot service
+  // No authentication required - bot only needs telegramId which is public
+  app.get('/api/telegram/user/:telegramId', async (req, res) => {
+    try {
+      const { telegramId } = req.params;
+
+      console.log(`📱 Bot API request for Telegram user ${telegramId}`);
+
+      // Find user by telegram ID
+      const { TelegramLinkingService } = await import('./telegramLinking');
+      const user = await TelegramLinkingService.getUserByTelegramId(telegramId);
+
+      if (!user) {
+        return res.json({
+          user: null,
+          message: 'User not found'
+        });
+      }
+
+      // Get user balance
+      const balance = await storage.getUserBalance(user.id);
+
+      // Get active challenges count
+      const allChallenges = await storage.getChallenges(user.id, 100);
+      const activeChallenges = allChallenges.filter((c: any) => 
+        c.status === 'active' || c.status === 'pending'
+      ).length;
+
+      return res.json({
+        user: {
+          id: user.id,
+          username: user.username,
+          firstName: user.firstName,
+          balance: balance.balance || '0',
+          coins: balance.coins || 0,
+          activeChallenges,
+          telegramId
+        }
+      });
+    } catch (error) {
+      console.error('❌ Bot API error:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Server error' 
+      });
+    }
+  });
+
   // Helper function to validate Telegram WebApp initData
   function validateTelegramWebAppData(
     initData: any,

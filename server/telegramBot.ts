@@ -1147,6 +1147,7 @@ Tap below to view and manage your challenges!`;
     
     // Set up message handlers before starting polling
     this.bot.on('message', async (msg) => {
+      console.log('🎯 Message received:', msg.text, 'from', msg.from?.id);
       const update = { message: msg };
       await this.processUpdate(update);
     });
@@ -1196,6 +1197,8 @@ Tap below to view and manage your challenges!`;
         const text = message.text;
         const firstName = message.from?.first_name || 'User';
         const telegramId = message.from?.id.toString();
+
+        console.log(`📨 Processing message: "${text}" from user ${telegramId}`);
 
         // Handle /start command - Always open mini-app
         if (text.startsWith('/start')) {
