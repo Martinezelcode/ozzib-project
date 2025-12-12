@@ -68,8 +68,10 @@ app.use((req, res, next) => {
     if (connectionTest.botInfo) {
       console.log(`✅ Bot token valid: @${connectionTest.botInfo.username}`);
       
-      // Start polling for messages (works without external webhook access)
-      telegramBot.startPolling();
+      // NOTE: Bot polling is now handled by the independent telegram-bot service
+      // Keeping this commented out to avoid conflicts with the separate bot instance
+      // telegramBot.startPolling();
+      console.log('⚠️  Bot polling disabled - using independent telegram-bot service');
       
       if (connectionTest.channelInfo) {
         console.log(`✅ Channel connected: ${connectionTest.channelInfo.title || connectionTest.channelInfo.first_name}`);
